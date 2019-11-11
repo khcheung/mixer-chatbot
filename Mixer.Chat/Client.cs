@@ -71,6 +71,10 @@ namespace Mixer.Chat
         public async Task ConnectWithToken(String accessToken, Int64 channelId)
         {
             var channelInfo = await GetChannelInfo(accessToken, channelId);
+            if (String.IsNullOrEmpty(channelInfo.AuthKey))
+            {
+                throw new Exception("Cannot Retrieve AuthKey From Token");
+            }
             await Connect(channelInfo.AuthKey, channelId, mUserId, channelInfo.EndPoints[0]);
         }
 

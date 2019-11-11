@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
+using System.IO;
 using System.Threading.Tasks;
 
 namespace TestConsole
@@ -7,18 +9,36 @@ namespace TestConsole
     {
         static async Task Main(string[] args)
         {
-            var chat = new MixerChat();
-            await chat.Connect();
-
-            while(true)
+            var configContent = "";
+            using (var file = File.Open(System.IO.Path.Combine(System.Environment.CurrentDirectory, "config.json"), FileMode.Open, FileAccess.Read))
             {
-                var message =  System.Console.ReadLine();
+                using (var sr = new StreamReader(file))
+                {
+                    configContent = await sr.ReadToEndAsync();
+                    sr.Close();
+                }
+                file.Close();
+            }
+            var config = JsonConvert.DeserializeObject<Config>(configContent);
+
+            var chat = new MixerChat();
+            await chat.Connect(config.Token, config.Channel);
+
+            while (true)
+            {
+                var message = System.Console.ReadLine();
                 await chat.SendMessage(message);
-                
+
             }
         }
 
 
+    }
+
+    public class Config
+    {
+        public String Token { get; set; }
+        public String Channel { get; set; }
     }
 
     public class MixerChat
@@ -31,7 +51,7 @@ namespace TestConsole
             client.UserJoinEvent += Client_UserJoinEvent;
             client.UserLeaveEvent += Client_UserLeaveEvent;
             client.ChatMessageEvent += Client_ChatMessageEvent;
-            
+
         }
 
         public async Task SendMessage(String message)
@@ -55,11 +75,11 @@ namespace TestConsole
 
         private void Client_UserJoinEvent(object sender, Mixer.Chat.Models.UserJoinEventArgs e)
         {
-            Console.WriteLine($"User Join: {e.EventData.OriginatingChannel} - {e.EventData.Username}");       
+            Console.WriteLine($"User Join: {e.EventData.OriginatingChannel} - {e.EventData.Username}");
 
             client.Msg($"Hello, {e.EventData.Username}", async r =>
             {
-                
+
             });
         }
 
@@ -69,9 +89,9 @@ namespace TestConsole
         }
 
 
-        public async Task Connect()
+        public async Task Connect(String token, String channel)
         {
-            await client.ConnectWithToken("[TOKEN]", "[CHANNEL NAME]");
+            await client.ConnectWithToken(token, channel);
         }
     }
 }
