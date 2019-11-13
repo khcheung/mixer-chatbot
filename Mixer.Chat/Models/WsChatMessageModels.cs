@@ -100,4 +100,23 @@ namespace Mixer.Chat.Models
         [JsonProperty("message")]
         public WsChatMessage Message { get; set; }
     }
+
+    public class WsWhisperReply
+    {
+        [JsonProperty("channel")]
+        public Int64 Channel { get; set; }
+        [JsonProperty("id")]
+        public String Id { get; set; }
+        [JsonProperty("user_name")]
+        public String Username { get; set; }
+        [JsonProperty("user_id")]
+        public Int64 UserId { get; set; }
+        [JsonProperty("user_level")]
+        public Int32 UserLevel { get; set; }
+
+        [JsonProperty("user_avatar")]
+        public String UserAvatar { get; set; }
+        [JsonProperty("message")]
+        public WsChatMessage Message { get; set; }
+    }
 }

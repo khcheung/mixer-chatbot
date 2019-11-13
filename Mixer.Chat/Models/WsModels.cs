@@ -56,10 +56,22 @@ namespace Mixer.Chat.Models
 
     internal enum WsEventType
     {
-        WelcomeEvent,
+        WelcomeEvent, 
+        ChatMessage,
         UserJoin,
         UserLeave,
-        ChatMessage
+        PollStart,
+        PollEnd,
+        DeleteMessage,
+        PurgeMessage,
+        ClearMessages,
+        UserUpdate,
+        UserTimeout,
+        SkillAttribution,
+        DeleteSkillAttribution,
+
+
+        
     }
 
 

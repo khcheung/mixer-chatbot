@@ -20,8 +20,18 @@ namespace Mixer.Chat
 
         public event EventHandler<WelcomeEventArgs> WelcomeEvent;
         public event EventHandler<UserJoinEventArgs> UserJoinEvent;
-        public event EventHandler<UserLeaveEventArgs> UserLeaveEvent;        
+        public event EventHandler<UserLeaveEventArgs> UserLeaveEvent;
         public event EventHandler<ChatMessageEventArgs> ChatMessageEvent;
+        public event EventHandler<PollStartEventArgs> PollStartEvent;
+        public event EventHandler<PollEndEventArgs> PollEndEvent;
+        public event EventHandler<DeleteMessageEventArgs> DeleteMessageEvent;
+        public event EventHandler<PurgeMessageEventArgs> PurgeMessageEvent;
+        public event EventHandler<ClearMessagesEventArgs> ClearMessagesEvent;
+        public event EventHandler<UserUpdateEventArgs> UserUpdateEvent;
+        public event EventHandler<UserTimeoutEventArgs> UserTimeoutEvent;
+        public event EventHandler<SkillAttributionEventArgs> SkillAttributionEvent;
+        public event EventHandler<DeleteSkillAttributionEventArgs> DeleteSkillAttributionEvent;
+
 
         private ClientWebSocket mClient = null;
         private Int32 mMessageId = 0;
@@ -113,7 +123,7 @@ namespace Mixer.Chat
         {
             mClient = new ClientWebSocket();
             await mClient.ConnectAsync(mChatUri, mCancellationToken);
-            ReceiveThread(mClient);            
+            ReceiveThread(mClient);
         }
 
         private void Client_SocketEvent(object sender, MessageEventArgs e)
@@ -124,18 +134,20 @@ namespace Mixer.Chat
                     try
                     {
                         HandleSocketEvent(e);
-                    } catch (Exception ex)
+                    }
+                    catch (Exception ex)
                     {
-                        Console.WriteLine($"Exception - {ex.Message}");
+                        Console.WriteLine($"Handle Event Exception - {ex.Message}");
                     }
                     break;
                 case WsMessageType.reply:
                     try
                     {
                         HandleSocketReply(e);
-                    } catch (Exception ex)
+                    }
+                    catch (Exception ex)
                     {
-                        Console.WriteLine("Exception 2");
+                        Console.WriteLine($"Handle Reply Exception  - {ex.Message}");
                     }
                     break;
             }
@@ -171,6 +183,80 @@ namespace Mixer.Chat
                         EventData = chatMessageEvent.Data
                     });
                     break;
+
+                case WsEventType.PollStart:
+                    var pollStartEvent = JsonConvert.DeserializeObject<WsEvent<WsPollStartEvent>>(e.MessageString);
+                    this.PollStartEvent?.Invoke(this, new PollStartEventArgs()
+                    {
+                        EventData = pollStartEvent.Data
+                    });
+                    break;
+
+                case WsEventType.PollEnd:
+                    var pollEndEvent = JsonConvert.DeserializeObject<WsEvent<WsPollEndEvent>>(e.MessageString);
+                    this.PollEndEvent?.Invoke(this, new PollEndEventArgs()
+                    {
+                        EventData = pollEndEvent.Data
+                    });
+                    break;
+
+                case WsEventType.DeleteMessage:
+                    var deleteMessageEvent = JsonConvert.DeserializeObject<WsEvent<WsDeleteMessageEvent>>(e.MessageString);
+                    this.DeleteMessageEvent?.Invoke(this, new DeleteMessageEventArgs()
+                    {
+                        EventData = deleteMessageEvent.Data
+                    });
+                    break;
+
+                case WsEventType.PurgeMessage:
+                    var purgeMessageEvent = JsonConvert.DeserializeObject<WsEvent<WsPurgeMessageEvent>>(e.MessageString);
+                    this.PurgeMessageEvent?.Invoke(this, new PurgeMessageEventArgs()
+                    {
+                        EventData = purgeMessageEvent.Data
+                    });
+                    break;
+
+                case WsEventType.ClearMessages:
+                    var clearMessagesEvent = JsonConvert.DeserializeObject<WsEvent<WsClearMessagesEvent>>(e.MessageString);
+                    this.ClearMessagesEvent?.Invoke(this, new ClearMessagesEventArgs()
+                    {
+                        EventData = clearMessagesEvent.Data
+                    });
+                    break;
+
+                case WsEventType.UserUpdate:
+                    var userUpdateEvent = JsonConvert.DeserializeObject<WsEvent<WsUserUpdateEvent>>(e.MessageString);
+                    this.UserUpdateEvent?.Invoke(this, new UserUpdateEventArgs()
+                    {
+                        EventData = userUpdateEvent.Data
+                    });
+                    break;
+
+                case WsEventType.UserTimeout:
+                    var userTimeoutEvent = JsonConvert.DeserializeObject<WsEvent<WsUserTimeoutEvent>>(e.MessageString);
+                    this.UserTimeoutEvent?.Invoke(this, new UserTimeoutEventArgs()
+                    {
+                        EventData = userTimeoutEvent.Data
+                    });
+                    break;
+
+                case WsEventType.SkillAttribution:
+                    var skillAttributionEvent = JsonConvert.DeserializeObject<WsEvent<WsSkillAttributionEvent>>(e.MessageString);
+                    this.SkillAttributionEvent?.Invoke(this, new SkillAttributionEventArgs()
+                    {
+                        EventData = skillAttributionEvent.Data
+                    });
+                    break;
+
+                case WsEventType.DeleteSkillAttribution:
+                    var deleteSkillAttributionEvent = JsonConvert.DeserializeObject<WsEvent<WsDeleteSkillAttributionEvent>>(e.MessageString);
+                    this.DeleteSkillAttributionEvent?.Invoke(this, new DeleteSkillAttributionEventArgs()
+                    {
+                        EventData = deleteSkillAttributionEvent.Data
+                    });
+                    break;
+
+
             }
         }
 
@@ -227,6 +313,30 @@ namespace Mixer.Chat
 
 
             return messageId;
+        }
+
+        public async Task<Int32> Whipser(String targetUsername, String chatMessage, Func<WsWhisperReply, Task> callBack)
+        {
+            var messageId = mMessageId++;
+            WsMethod method = new WsMethod()
+            {
+                MessageId = messageId,
+                MessageType = WsMessageType.method,
+                Method = "whisper",
+                Arguments = new object[] { targetUsername, chatMessage }
+            };
+            var jsonString = JsonConvert.SerializeObject(method);
+            var jsonByte = System.Text.Encoding.UTF8.GetBytes(jsonString);
+            mReplyHandler.Add(messageId, async message =>
+            {
+                var result = JsonConvert.DeserializeObject<WsReply<WsWhisperReply>>(message);
+                await callBack(result.Data);
+            });
+            await mClient.SendAsync(new ArraySegment<byte>(jsonByte), WebSocketMessageType.Text, true, mCancellationToken);
+
+
+            return messageId;
+
         }
 
         private void ReceiveThread(ClientWebSocket client)
