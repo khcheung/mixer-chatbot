@@ -1,0 +1,8 @@
+language: csharp
+solution: mixer-chatbot.sln
+mono: none
+dotnet: 2.1.801
+
+script:
+- dotnet restore
+- dotnet msbuild
