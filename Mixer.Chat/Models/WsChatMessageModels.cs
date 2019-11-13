@@ -119,4 +119,21 @@ namespace Mixer.Chat.Models
         [JsonProperty("message")]
         public WsChatMessage Message { get; set; }
     }
+
+    public class WsHistoryReply
+    {
+        [JsonProperty("channel")]
+        public Int64 Channel { get; set; }
+        [JsonProperty("id")]
+        public String Id { get; set; }
+        [JsonProperty("user_name")]
+        public String Username { get; set; }
+        [JsonProperty("user_id")]
+        public Int64 UserId { get; set; }
+        [JsonProperty("user_roles")]
+        public String[] UserRoles { get; set; }
+        
+        [JsonProperty("message")]
+        public WsChatMessage Message { get; set; }
+    }
 }

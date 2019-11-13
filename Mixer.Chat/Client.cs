@@ -48,8 +48,6 @@ namespace Mixer.Chat
             SocketEvent += Client_SocketEvent;
         }
 
-
-
         public async Task ConnectWithToken(String accessToken, String channelName)
         {
             var channelInfo = await GetChannelInfo(channelName);
@@ -269,6 +267,52 @@ namespace Mixer.Chat
             }
         }
 
+        private void ReceiveThread(ClientWebSocket client)
+        {
+            var byteBuffer = new Byte[65535];
+            var buffer = new ArraySegment<Byte>(byteBuffer);
+            var messageBuffer = new List<Byte>();
+            WebSocketMessageType messageType = WebSocketMessageType.Text;
+            _ = Task.Run(async () =>
+            {
+                while (!mCancellationToken.IsCancellationRequested)
+                {
+                    var result = await client.ReceiveAsync(buffer, mCancellationToken);
+                    messageType = result.MessageType;
+                    if (messageType == WebSocketMessageType.Close)
+                    {
+                        await client.CloseAsync(WebSocketCloseStatus.NormalClosure, "", mCancellationToken);
+                        return;
+                    }
+
+                    messageBuffer.AddRange(buffer.Array.Skip(buffer.Offset).Take(result.Count).ToArray());
+
+                    if (result.EndOfMessage)
+                    {
+                        if (messageType == WebSocketMessageType.Text)
+                        {
+                            var messageContent = System.Text.Encoding.UTF8.GetString(messageBuffer.ToArray());
+
+                            var message = JsonConvert.DeserializeObject<WsMessage>(messageContent);
+                            if (SocketEvent != null)
+                            {
+                                SocketEvent(this, new MessageEventArgs()
+                                {
+                                    Message = message,
+                                    MessageString = messageContent,
+                                    MessageId = message.MessageId
+                                });
+                            }
+                        }
+
+                        messageBuffer.Clear();
+                    }
+                }
+            });
+        }
+
+
+        #region Method
         public async Task<Int32> Auth(Func<WsAuthReply, Task> callBack)
         {
             var messageId = mMessageId++;
@@ -339,48 +383,295 @@ namespace Mixer.Chat
 
         }
 
-        private void ReceiveThread(ClientWebSocket client)
+        public async Task<Int32> VoteChoose(Int32 voteIndex, Func<String, Task> callBack)
         {
-            var byteBuffer = new Byte[65535];
-            var buffer = new ArraySegment<Byte>(byteBuffer);
-            var messageBuffer = new List<Byte>();
-            WebSocketMessageType messageType = WebSocketMessageType.Text;
-            _ = Task.Run(async () =>
+            var messageId = mMessageId++;
+            WsMethod method = new WsMethod()
             {
-                while (!mCancellationToken.IsCancellationRequested)
-                {
-                    var result = await client.ReceiveAsync(buffer, mCancellationToken);
-                    messageType = result.MessageType;
-                    if (messageType == WebSocketMessageType.Close)
-                    {
-                        await client.CloseAsync(WebSocketCloseStatus.NormalClosure, "", mCancellationToken);
-                        return;
-                    }
-
-                    messageBuffer.AddRange(buffer.Array.Skip(buffer.Offset).Take(result.Count).ToArray());
-
-                    if (result.EndOfMessage)
-                    {
-                        if (messageType == WebSocketMessageType.Text)
-                        {
-                            var messageContent = System.Text.Encoding.UTF8.GetString(messageBuffer.ToArray());
-
-                            var message = JsonConvert.DeserializeObject<WsMessage>(messageContent);
-                            if (SocketEvent != null)
-                            {
-                                SocketEvent(this, new MessageEventArgs()
-                                {
-                                    Message = message,
-                                    MessageString = messageContent,
-                                    MessageId = message.MessageId
-                                });
-                            }
-                        }
-
-                        messageBuffer.Clear();
-                    }
-                }
+                MessageId = messageId,
+                MessageType = WsMessageType.method,
+                Method = "vote:choose",
+                Arguments = new object[] { voteIndex }
+            };
+            var jsonString = JsonConvert.SerializeObject(method);
+            var jsonByte = System.Text.Encoding.UTF8.GetBytes(jsonString);
+            mReplyHandler.Add(messageId, async message =>
+            {
+                var result = JsonConvert.DeserializeObject<WsReply<String>>(message);
+                await callBack(result.Data);
             });
+            await mClient.SendAsync(new ArraySegment<byte>(jsonByte), WebSocketMessageType.Text, true, mCancellationToken);
+
+
+            return messageId;
+
         }
+
+        public async Task<Int32> VoteStart(String question, String[] answer, Int32 durationSeconds, Func<String, Task> callBack)
+        {
+            var messageId = mMessageId++;
+            WsMethod method = new WsMethod()
+            {
+                MessageId = messageId,
+                MessageType = WsMessageType.method,
+                Method = "vote:start",
+                Arguments = new object[] { question, answer, durationSeconds }
+            };
+            var jsonString = JsonConvert.SerializeObject(method);
+            var jsonByte = System.Text.Encoding.UTF8.GetBytes(jsonString);
+            mReplyHandler.Add(messageId, async message =>
+            {
+                var result = JsonConvert.DeserializeObject<WsReply<String>>(message);
+                await callBack(result.Data);
+            });
+            await mClient.SendAsync(new ArraySegment<byte>(jsonByte), WebSocketMessageType.Text, true, mCancellationToken);
+
+
+            return messageId;
+
+        }
+
+        public async Task<Int32> Timeout(String username, Int32 durationSeconds, Func<String, Task> callBack)
+        {
+            var messageId = mMessageId++;
+            WsMethod method = new WsMethod()
+            {
+                MessageId = messageId,
+                MessageType = WsMessageType.method,
+                Method = "timeout",
+                Arguments = new object[] { username, durationSeconds }
+            };
+            var jsonString = JsonConvert.SerializeObject(method);
+            var jsonByte = System.Text.Encoding.UTF8.GetBytes(jsonString);
+            mReplyHandler.Add(messageId, async message =>
+            {
+                var result = JsonConvert.DeserializeObject<WsReply<String>>(message);
+                await callBack(result.Data);
+            });
+            await mClient.SendAsync(new ArraySegment<byte>(jsonByte), WebSocketMessageType.Text, true, mCancellationToken);
+
+
+            return messageId;
+
+        }
+
+        public async Task<Int32> Purge(String username, Func<Task> callBack)
+        {
+            var messageId = mMessageId++;
+            WsMethod method = new WsMethod()
+            {
+                MessageId = messageId,
+                MessageType = WsMessageType.method,
+                Method = "purge",
+                Arguments = new object[] { username }
+            };
+            var jsonString = JsonConvert.SerializeObject(method);
+            var jsonByte = System.Text.Encoding.UTF8.GetBytes(jsonString);
+            mReplyHandler.Add(messageId, async message =>
+            {
+                var result = JsonConvert.DeserializeObject<WsReply<Object>>(message);
+                await callBack();
+            });
+            await mClient.SendAsync(new ArraySegment<byte>(jsonByte), WebSocketMessageType.Text, true, mCancellationToken);
+
+
+            return messageId;
+
+        }
+
+        public async Task<Int32> DeleteMessage(String id, Func<String, Task> callBack)
+        {
+            var messageId = mMessageId++;
+            WsMethod method = new WsMethod()
+            {
+                MessageId = messageId,
+                MessageType = WsMessageType.method,
+                Method = "deleteMessage",
+                Arguments = new object[] { id }
+            };
+            var jsonString = JsonConvert.SerializeObject(method);
+            var jsonByte = System.Text.Encoding.UTF8.GetBytes(jsonString);
+            mReplyHandler.Add(messageId, async message =>
+            {
+                var result = JsonConvert.DeserializeObject<WsReply<String>>(message);
+                await callBack(result.Data);
+            });
+            await mClient.SendAsync(new ArraySegment<byte>(jsonByte), WebSocketMessageType.Text, true, mCancellationToken);
+
+
+            return messageId;
+
+        }
+
+        public async Task<Int32> ClearMessage(Func<String, Task> callBack)
+        {
+            var messageId = mMessageId++;
+            WsMethod method = new WsMethod()
+            {
+                MessageId = messageId,
+                MessageType = WsMessageType.method,
+                Method = "clearMessages",
+                Arguments = new object[] { }
+            };
+            var jsonString = JsonConvert.SerializeObject(method);
+            var jsonByte = System.Text.Encoding.UTF8.GetBytes(jsonString);
+            mReplyHandler.Add(messageId, async message =>
+            {
+                var result = JsonConvert.DeserializeObject<WsReply<String>>(message);
+                await callBack(result.Data);
+            });
+            await mClient.SendAsync(new ArraySegment<byte>(jsonByte), WebSocketMessageType.Text, true, mCancellationToken);
+
+
+            return messageId;
+
+        }
+
+        public async Task<Int32> History(Int32 messageCount, Func<WsHistoryReply[], Task> callBack)
+        {
+            var messageId = mMessageId++;
+            WsMethod method = new WsMethod()
+            {
+                MessageId = messageId,
+                MessageType = WsMessageType.method,
+                Method = "history",
+                Arguments = new object[] { messageCount }
+            };
+            var jsonString = JsonConvert.SerializeObject(method);
+            var jsonByte = System.Text.Encoding.UTF8.GetBytes(jsonString);
+            mReplyHandler.Add(messageId, async message =>
+            {
+                var result = JsonConvert.DeserializeObject<WsReply<WsHistoryReply[]>>(message);
+                await callBack(result.Data);
+            });
+            await mClient.SendAsync(new ArraySegment<byte>(jsonByte), WebSocketMessageType.Text, true, mCancellationToken);
+
+
+            return messageId;
+        }
+
+        public async Task<Int32> GiveawayStart(Func<String, Task> callBack)
+        {
+            var messageId = mMessageId++;
+            WsMethod method = new WsMethod()
+            {
+                MessageId = messageId,
+                MessageType = WsMessageType.method,
+                Method = "giveaway:start",
+                Arguments = new object[] { }
+            };
+            var jsonString = JsonConvert.SerializeObject(method);
+            var jsonByte = System.Text.Encoding.UTF8.GetBytes(jsonString);
+            mReplyHandler.Add(messageId, async message =>
+            {
+                var result = JsonConvert.DeserializeObject<WsReply<String>>(message);
+                await callBack(result.Data);
+            });
+            await mClient.SendAsync(new ArraySegment<byte>(jsonByte), WebSocketMessageType.Text, true, mCancellationToken);
+
+
+            return messageId;
+
+        }
+
+        public async Task<Int32> Ping(Func<Task> callBack)
+        {
+            var messageId = mMessageId++;
+            WsMethod method = new WsMethod()
+            {
+                MessageId = messageId,
+                MessageType = WsMessageType.method,
+                Method = "ping",
+                Arguments = new object[] { }
+            };
+            var jsonString = JsonConvert.SerializeObject(method);
+            var jsonByte = System.Text.Encoding.UTF8.GetBytes(jsonString);
+            mReplyHandler.Add(messageId, async message =>
+            {
+                var result = JsonConvert.DeserializeObject<WsReply<Object>>(message);
+                await callBack();
+            });
+            await mClient.SendAsync(new ArraySegment<byte>(jsonByte), WebSocketMessageType.Text, true, mCancellationToken);
+
+
+            return messageId;
+
+        }
+
+        public async Task<Int32> Attachemotes(Func<Task> callBack)
+        {
+            var messageId = mMessageId++;
+            WsMethod method = new WsMethod()
+            {
+                MessageId = messageId,
+                MessageType = WsMessageType.method,
+                Method = "attachEmotes",
+                Arguments = new object[] { }
+            };
+            var jsonString = JsonConvert.SerializeObject(method);
+            var jsonByte = System.Text.Encoding.UTF8.GetBytes(jsonString);
+            mReplyHandler.Add(messageId, async message =>
+            {
+                var result = JsonConvert.DeserializeObject<WsReply<Object>>(message);
+                await callBack();
+            });
+            await mClient.SendAsync(new ArraySegment<byte>(jsonByte), WebSocketMessageType.Text, true, mCancellationToken);
+
+
+            return messageId;
+
+        }
+
+        public async Task<Int32> CancelSkill(String skillId, Func<String, Task> callBack)
+        {
+            var messageId = mMessageId++;
+            WsMethod method = new WsMethod()
+            {
+                MessageId = messageId,
+                MessageType = WsMessageType.method,
+                Method = "cancelSkill",
+                Arguments = new object[] { skillId }
+            };
+            var jsonString = JsonConvert.SerializeObject(method);
+            var jsonByte = System.Text.Encoding.UTF8.GetBytes(jsonString);
+            mReplyHandler.Add(messageId, async message =>
+            {
+                var result = JsonConvert.DeserializeObject<WsReply<String>>(message);
+                await callBack(result.Data);
+            });
+            await mClient.SendAsync(new ArraySegment<byte>(jsonByte), WebSocketMessageType.Text, true, mCancellationToken);
+
+
+            return messageId;
+
+        }
+
+        public async Task<Int32> OptOutEvents(String[] events, Func<Task> callBack)
+        {
+            var messageId = mMessageId++;
+            WsMethod method = new WsMethod()
+            {
+                MessageId = messageId,
+                MessageType = WsMessageType.method,
+                Method = "optOutEvents",
+                Arguments = events
+            };
+            var jsonString = JsonConvert.SerializeObject(method);
+            var jsonByte = System.Text.Encoding.UTF8.GetBytes(jsonString);
+            mReplyHandler.Add(messageId, async message =>
+            {
+                var result = JsonConvert.DeserializeObject<WsReply<Object>>(message);
+                await callBack();
+            });
+            await mClient.SendAsync(new ArraySegment<byte>(jsonByte), WebSocketMessageType.Text, true, mCancellationToken);
+
+
+            return messageId;
+
+        }
+
+        #endregion
+
+        
     }
 }
